@@ -147,7 +147,7 @@ UI Display + Journal Sidebar
 
 ## 🔧 Tech Stack
 | **Layer** | **Tool(s)** | **Why?** |
-|-------|---------|------|
+|---|---|---|
 | **UI/Frontend** | Streamlit | "Rapid prototyping, interactive chat out-of-box." |
 | **LLM Backend** | Ollama (Llama 3:8b) / Grok API | "Local privacy + cloud fallback; humor-tuned models." |
 | **Emotion Detection** | Hugging Face Transformers (DistilBERT) | "Lightweight, local sentiment analysis." |
@@ -167,53 +167,3 @@ UI Display + Journal Sidebar
 - **Mobile:** PWA via Streamlit extras.
 - **Multi-Language:** Prompt translations.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-LayerTool(s)Why?UI/FrontendStreamlitRapid prototyping, interactive chat out-of-box.LLM BackendOllama (Llama 3:8b) / Grok APILocal privacy + cloud fallback; humor-tuned models.Emotion DetectionHugging Face Transformers (DistilBERT)Lightweight, local sentiment analysis.PersistenceSQLiteSimple, file-based journaling.HTTP/JSONRequestsAPI calls to Ollama/Grok.OtherPython 3.10+, TorchCore runtime and ML deps.
-
-No External Services: Runs fully offline except Grok fallback.
-Model Size: ~4.7GB for Llama 3:8b (quantized options available).
-
-📈 Future Enhancements
-
-Voice Input: Speech-to-text via Whisper (local).
-Advanced Emotions: Multi-label detection (anger, joy, fear).
-Personalization: Fine-tune on user history.
-Analytics: Mood trend charts (Matplotlib integration).
-Mobile: PWA via Streamlit extras.
-Multi-Language: Prompt translations.
