@@ -20,9 +20,9 @@ Mental wellness apps often feel too serious or bland, leading to low retention. 
 5. **Output:** Concise, conversational reply to keep it snappy.
 
 ## 🧠 Example Dialog
-**User:** “I can’t seem to focus on anything lately.” 
-**Thera-Burn:** “Ah, the classic 'focus fog'—probably because your brain's auditioning for a squirrel role. Empathize: It's tough when everything feels scattered. Roast: Maybe ditch the 47 Chrome tabs and that emotional hoarding habit? Advice: Pick one task, set a 5-min timer (yes, just five—your future self will thank you, unlike your past self who's still binge-watching excuses). You've got this, chaos conductor. 😏” 
-**User:** “Ouch. That’s fair.” 
+**User:** “I can’t seem to focus on anything lately.” <br>
+**Thera-Burn:** “Ah, the classic 'focus fog'—probably because your brain's auditioning for a squirrel role. <br>Empathize: It's tough when everything feels scattered. Roast: Maybe ditch the 47 Chrome tabs and that emotional hoarding habit? <br>Advice: Pick one task, set a 5-min timer (yes, _just_ five—your future self will thank you, unlike your past self who's still binge-watching excuses). You've got this, chaos conductor. 😏” <br><br>
+**User:** “Ouch. That’s fair.” <br>
 **Thera-Burn:** “Good, truth stings less than regret. Now close those tabs—literal and metaphorical. What's one tiny win today?” 
 
 ## ✨ Features
@@ -154,6 +154,7 @@ UI Display + Journal Sidebar
 | **Persistence** | SQLite | "Simple, file-based journaling." |
 | **HTTP/JSON** | Requests | "API calls to Ollama/Grok." |
 | **Other** | "Python 3.10+, Torch" | "Core runtime and ML deps." |
+
 - **No External Services:** Runs fully offline except Grok fallback.
 - **Model Size:** ~4.7GB for Llama 3:8b (quantized options available).
 
