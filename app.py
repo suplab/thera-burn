@@ -1,198 +1,167 @@
-# app.py
-# Thera-Burn: AI Therapist That Roasts You
-# Streamlit app with emotion detection, roast generation, and mood journaling.
-# Prefers local Ollama (llama3:8b) with fallback to Grok API.
-
 import os
-import sqlite3
-import streamlit as st
-from datetime import datetime
-import requests
-import json
-from typing import Dict, Any, List
-from transformers import pipeline
+import gradio as gr
 
-# System prompt for the AI (enhanced with CBT elements)
-SYSTEM_PROMPT = """
-You are a brutally honest AI life coach disguised as a therapist. 
-Your style: Empathetic yet witty, blending dark humor and sarcasm like a stand-up comic who's secretly a CBT expert.
-For every user vent:
-1. Acknowledge the emotion with empathy.
-2. Deliver a light-hearted roast tied to their situation (fun, non-malicious, self-reflective).
-3. Provide micro-advice: Use CBT techniques (e.g., challenge distortions, suggest behavioral experiments) hidden in humorous, actionable steps.
-4. End on an uplifting note to encourage progress.
-Keep responses concise (under 150 words), conversational, and roast-heavy but supportive.
-Example: User vents about procrastination → Roast their "future self" myth, advise a 5-min start rule with a funny twist.
-"""
+from config import (
+    GROQ_MODELS, GROQ_DEFAULT_MODEL,
+    HF_CHAT_MODELS, HF_DEFAULT_MODEL,
+    OLLAMA_DEFAULT_MODEL,
+    EMOTION_EMOJI_MAP,
+)
+from core.emotion import detect_emotion
+from core.llm import generate_response
+from core.journal import init_db, log_entry, get_history
 
-# Initialize sentiment pipeline (local HuggingFace model for emotion detection)
-@st.cache_resource
-def load_emotion_analyzer():
-    """Load a local sentiment analysis pipeline for basic emotion tagging."""
-    # Using a simple sentiment model; for more emotions, swap to 'bhadresh-savani/distilbert-base-uncased-emotion'
-    return pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+init_db()
 
-emotion_analyzer = load_emotion_analyzer()
 
-def init_db():
-    """Initialize SQLite database for mood journal."""
-    conn = sqlite3.connect('mood_journal.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            vent TEXT,
-            emotion TEXT,
-            response TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+def respond(message, history, provider, groq_key, groq_model, grok_key, hf_token, hf_model, ollama_model):
+    if not message.strip():
+        return history, "", ""
 
-def log_mood_entry(vent: str, emotion: str, response: str):
-    """Log entry to mood journal."""
-    conn = sqlite3.connect('mood_journal.db')
-    c = conn.cursor()
-    timestamp = datetime.now().isoformat()
-    c.execute('INSERT INTO entries (timestamp, vent, emotion, response) VALUES (?, ?, ?, ?)',
-              (timestamp, vent, emotion, response))
-    conn.commit()
-    conn.close()
+    emotion = detect_emotion(message)
 
-def get_mood_history() -> List[Dict[str, Any]]:
-    """Retrieve recent mood journal entries."""
-    conn = sqlite3.connect('mood_journal.db')
-    c = conn.cursor()
-    c.execute('SELECT timestamp, vent, emotion, response FROM entries ORDER BY timestamp DESC LIMIT 5')
-    rows = c.fetchall()
-    conn.close()
-    return [{'timestamp': row[0], 'vent': row[1], 'emotion': row[2], 'response': row[3]} for row in rows]
-
-def detect_emotion(text: str) -> str:
-    """Detect primary emotion using the pipeline."""
-    result = emotion_analyzer(text)[0]
-    label = result['label'].lower()
-    # Map to simple emotions (extend as needed)
-    emotion_map = {
-        'positive': 'happy',
-        'negative': 'sad',
-        'neutral': 'bored'
+    api_keys = {
+        "groq": groq_key or os.getenv("GROQ_API_KEY", ""),
+        "grok": grok_key or os.getenv("XAI_API_KEY", ""),
+        "hf":   hf_token or os.getenv("HF_TOKEN", ""),
     }
-    return emotion_map.get(label, label)
-
-def get_ollama_response(user_input: str, emotion: str, model: str = "llama3:8b") -> str:
-    """
-    Query local Ollama with emotion context.
-    Assumes Ollama running on localhost:11434.
-    """
-    enhanced_prompt = f"{SYSTEM_PROMPT}\n\nUser's emotion: {emotion}. User vent: {user_input}"
-    url = "http://localhost:11434/api/chat"
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": enhanced_prompt}
-        ],
-        "stream": False
+    models = {
+        "groq":   groq_model,
+        "hf":     hf_model,
+        "ollama": ollama_model,
     }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        return result["message"]["content"]
-    except requests.exceptions.RequestException:
-        return None
 
-def get_grok_response(user_input: str, emotion: str, api_key: str) -> str:
-    """
-    Fallback to Grok API.
-    """
-    enhanced_prompt = f"{SYSTEM_PROMPT}\n\nUser's emotion: {emotion}. User vent: {user_input}"
-    url = "https://api.x.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "grok-3",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": enhanced_prompt}
-        ],
-        "temperature": 0.8,  # Slightly higher for humor
-        "max_tokens": 300
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException:
-        return None
+    response = generate_response(message, emotion, provider, api_keys, models)
+    log_entry(message, emotion, response)
 
-def main():
-    st.set_page_config(page_title="Thera-Burn", page_icon="😈")
-    st.title("😈 RoastMyFeelings")
-    st.markdown("*Not your therapist. Your brutally honest life coach.*")
+    history = list(history or [])
+    history.append({"role": "user",      "content": message})
+    history.append({"role": "assistant", "content": response})
 
-    # Sidebar for history
-    st.sidebar.header("Mood Journal")
-    if st.sidebar.button("View Recent Entries"):
-        history = get_mood_history()
-        for entry in history:
-            st.sidebar.write(f"**{entry['timestamp'][:10]}** - {entry['emotion'].title()}: {entry['vent'][:50]}...")
-            st.sidebar.write(f"AI: {entry['response'][:100]}...")
+    emoji = EMOTION_EMOJI_MAP.get(emotion, "🤔")
+    return history, "", f"{emoji} Detected mood: **{emotion.title()}**"
 
-    # Check for Grok API key
-    api_key = st.sidebar.text_input("Grok API Key (for fallback)", type="password", help="Set XAI_API_KEY env var or enter here.")
-    if not api_key:
-        api_key = os.getenv("XAI_API_KEY")
 
-    # Main chat interface
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+def refresh_journal():
+    entries = get_history(limit=10)
+    return [
+        [
+            e["timestamp"][:16].replace("T", " "),
+            e["emotion"].title(),
+            (e["vent"][:70]     + "…") if len(e["vent"])     > 70  else e["vent"],
+            (e["response"][:120] + "…") if len(e["response"]) > 120 else e["response"],
+        ]
+        for e in entries
+    ]
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
 
-    if prompt := st.chat_input("Vent here... (or type 'history' for journal)"):
-        # Handle special commands
-        if prompt.lower() == 'history':
-            st.session_state.messages.append({"role": "assistant", "content": "Here's your recent mood history in the sidebar!"})
-        else:
-            # Add user message
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
+def toggle_provider(provider):
+    return (
+        gr.update(visible=provider == "Groq"),
+        gr.update(visible=provider == "Grok (xAI)"),
+        gr.update(visible=provider == "HuggingFace"),
+        gr.update(visible=provider == "Ollama (Local)"),
+    )
 
-            # Detect emotion
-            with st.spinner("Analyzing your vibe..."):
-                emotion = detect_emotion(prompt)
 
-            # Generate response
-            with st.spinner("Roasting up some truth..."):
-                response = get_ollama_response(prompt, emotion)
-                if response is None and api_key:
-                    response = get_grok_response(prompt, emotion, api_key)
-                if response is None:
-                    response = "Oof, my circuits are fried. Try again? (Check Ollama/Grok setup.)"
+with gr.Blocks(theme=gr.themes.Soft(), title="Thera-Burn 😈") as demo:
+    gr.Markdown(
+        "# 😈 RoastMyFeelings\n"
+        "### *Not your therapist. Your brutally honest life coach.*"
+    )
 
-            # Display response
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            with st.chat_message("assistant"):
-                st.markdown(response)
+    with gr.Row():
+        # ── Chat panel ────────────────────────────────────────────────
+        with gr.Column(scale=7):
+            chatbot = gr.Chatbot(
+                label="Chat",
+                height=460,
+                type="messages",
+                bubble_full_width=False,
+                show_copy_button=True,
+            )
+            emotion_info = gr.Markdown("")
 
-            # Log to journal
-            log_mood_entry(prompt, emotion, response)
+            with gr.Row():
+                msg_input = gr.Textbox(
+                    placeholder="Vent here… What's eating you today?",
+                    show_label=False,
+                    lines=2,
+                    scale=5,
+                    container=False,
+                )
+                send_btn = gr.Button("🔥 Roast Me", variant="primary", scale=1, min_width=130)
 
-            # Show detected emotion
-            st.info(f"😏 Detected mood: **{emotion.title()}**")
+            clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary", size="sm")
 
-        # Rerun to show new message
-        st.rerun()
+        # ── Settings + Journal panel ──────────────────────────────────
+        with gr.Column(scale=3):
+            with gr.Accordion("⚙️ Settings", open=True):
+                provider = gr.Radio(
+                    choices=["Groq", "Grok (xAI)", "HuggingFace", "Ollama (Local)"],
+                    value="Groq",
+                    label="LLM Provider",
+                )
+
+                with gr.Column(visible=True) as groq_group:
+                    groq_key = gr.Textbox(
+                        label="Groq API Key",
+                        type="password",
+                        placeholder="gsk_…",
+                        value=os.getenv("GROQ_API_KEY", ""),
+                    )
+                    groq_model = gr.Dropdown(
+                        choices=GROQ_MODELS,
+                        value=GROQ_DEFAULT_MODEL,
+                        label="Groq Model",
+                    )
+
+                with gr.Column(visible=False) as grok_group:
+                    grok_key = gr.Textbox(
+                        label="Grok API Key (xAI)",
+                        type="password",
+                        placeholder="xai-…",
+                        value=os.getenv("XAI_API_KEY", ""),
+                    )
+
+                with gr.Column(visible=False) as hf_group:
+                    hf_token = gr.Textbox(
+                        label="HuggingFace Token",
+                        type="password",
+                        placeholder="hf_…",
+                        value=os.getenv("HF_TOKEN", ""),
+                    )
+                    hf_model = gr.Dropdown(
+                        choices=HF_CHAT_MODELS,
+                        value=HF_DEFAULT_MODEL,
+                        label="HF Model",
+                    )
+
+                with gr.Column(visible=False) as ollama_group:
+                    ollama_model = gr.Textbox(
+                        label="Ollama Model",
+                        value=OLLAMA_DEFAULT_MODEL,
+                    )
+
+            with gr.Accordion("📔 Mood Journal", open=False):
+                journal_btn = gr.Button("🔄 Refresh", variant="secondary", size="sm")
+                journal_display = gr.Dataframe(
+                    headers=["Date", "Mood", "Vent", "Response"],
+                    datatype=["str", "str", "str", "str"],
+                    interactive=False,
+                    wrap=True,
+                )
+
+    # ── Event wiring ──────────────────────────────────────────────────
+    chat_inputs  = [msg_input, chatbot, provider, groq_key, groq_model, grok_key, hf_token, hf_model, ollama_model]
+    chat_outputs = [chatbot, msg_input, emotion_info]
+
+    send_btn.click(respond, inputs=chat_inputs, outputs=chat_outputs)
+    msg_input.submit(respond, inputs=chat_inputs, outputs=chat_outputs)
+    clear_btn.click(lambda: ([], "", ""), outputs=[chatbot, msg_input, emotion_info])
+    journal_btn.click(refresh_journal, outputs=[journal_display])
+    provider.change(toggle_provider, inputs=[provider], outputs=[groq_group, grok_group, hf_group, ollama_group])
+
 
 if __name__ == "__main__":
-    init_db()
-    main()
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
