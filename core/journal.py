@@ -41,3 +41,22 @@ def get_history(limit: int = 10) -> List[Dict[str, Any]]:
         {"timestamp": r[0], "vent": r[1], "emotion": r[2], "response": r[3]}
         for r in rows
     ]
+
+
+def get_all_entries() -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT timestamp, vent, emotion, response FROM entries ORDER BY timestamp ASC"
+    ).fetchall()
+    conn.close()
+    return [
+        {"timestamp": r[0], "vent": r[1], "emotion": r[2], "response": r[3]}
+        for r in rows
+    ]
+
+
+def clear_history():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM entries")
+    conn.commit()
+    conn.close()
